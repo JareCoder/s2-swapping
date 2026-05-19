@@ -95,10 +95,11 @@ void main_thread(void*)
 	if (!GetModuleInformation(GetCurrentProcess(), module_, &module_info, sizeof(module_info)))
 		return fmt::println("failed to retrieve module information: {:08X}", GetLastError());
 
-	constexpr auto signatures = std::to_array<std::pair<const char*, const char*>>({
-		{ "\x48\x8B\xC4\x44\x89\x48\x20\x48\x89\x50\x10", "xxxxxxxxxxx" },
-		{ "\x44\x89\x4C\x24\x00\x4C\x89\x44\x24\x00\x48\x89\x54\x24\x00\x55", "xxxx?xxxx?xxxx?x" }
-	});
+    constexpr auto signatures = std::to_array<std::pair<const char*, const char*>>({
+        { "\x44\x89\x4C\x24\x20\x4C\x89\x44\x24\x18\x48\x89\x54\x24\x10\x55\x53\x56\x57\x41\x56", "xxxxxxxxxxxxxxxxxxxxx" },
+        { "\x48\x8B\xC4\x44\x89\x48\x20\x48\x89\x50\x10", "xxxxxxxxxxx" },
+        { "\x44\x89\x4C\x24\x00\x4C\x89\x44\x24\x00\x48\x89\x54\x24\x00\x55", "xxxx?xxxx?xxxx?x" }
+        });
 
 	std::uintptr_t fn_ptr = NULL;
 

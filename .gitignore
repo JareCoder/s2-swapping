@@ -3,6 +3,7 @@
 **/enc_temp_folder/
 **/x64/Debug/
 **/x64/Release/
+minhook/
 
 # Prerequisites
 *.d

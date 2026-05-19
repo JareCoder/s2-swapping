@@ -15,13 +15,17 @@
 
 std::uintptr_t find_pattern(std::uintptr_t base, size_t length, const char* pattern, const char* mask)
 {
-	length -= strlen(mask);
+	size_t mask_len = strlen(mask);
+	if (mask_len > length)
+		return NULL;
 
-	for (int i = 0; i <= length; i++)
+	length -= mask_len;
+
+	for (size_t i = 0; i <= length; i++)
 	{
 		bool found = true;
 
-		for (int p = 0; mask[p]; p++)
+		for (size_t p = 0; mask[p]; p++)
 		{
 			if (mask[p] == 'x' && pattern[p] != reinterpret_cast<char*>(base)[i + p])
 			{
@@ -56,21 +60,38 @@ open_fn o_open = nullptr;
 
 __int64 __fastcall open_hk(__int64 a1, const char* a2, __int64 a3, int a4, const char* a5)
 {
-	const std::string path = normalize_path(a2);
+	if (!a2)
+		return o_open(a1, a2, a3, a4, a5);
 
-	for (const auto& dir : std::filesystem::recursive_directory_iterator("./swapping"))
+	try
 	{
-		std::string absolute = std::filesystem::absolute(dir.path()).string();
-		std::string relative = normalize_path(dir.path().string());
+		std::string path = normalize_path(a2);
 
-		replace_str("./swapping/", "", relative);
+		// Remove leading slashes if any
+		while (!path.empty() && path[0] == '/')
+			path.erase(0, 1);
 
-		if (relative != path)
-			continue;
-
-		fmt::println("file {}", path.c_str());
-		fmt::println("{:c}{:c} swapped to {}", 192, 196, absolute);
-		return o_open(a1, absolute.c_str(), a3, a4, "");
+		if (!path.empty())
+		{
+			std::filesystem::path swap_path = std::filesystem::path("./swapping") / path;
+			
+			std::error_code ec;
+			if (std::filesystem::exists(swap_path, ec) && std::filesystem::is_regular_file(swap_path, ec))
+			{
+				std::string absolute = std::filesystem::absolute(swap_path, ec).string();
+				fmt::println("file {}", a2);
+				fmt::println(" -> swapped to {}", absolute);
+				return o_open(a1, absolute.c_str(), a3, a4, a5);
+			}
+		}
+	}
+	catch (const std::exception& e)
+	{
+		fmt::println("error: {}", e.what());
+	}
+	catch (...)
+	{
+		fmt::println("error: unknown exception");
 	}
 
 	return o_open(a1, a2, a3, a4, a5);
@@ -78,7 +99,8 @@ __int64 __fastcall open_hk(__int64 a1, const char* a2, __int64 a3, int a4, const
 
 void main_thread(void*)
 {
-	std::filesystem::create_directory("./swapping");
+	std::error_code ec;
+	std::filesystem::create_directory("./swapping", ec);
 
 	fmt::print("waiting filesystem_stdio.dll module... ");
 
@@ -95,11 +117,11 @@ void main_thread(void*)
 	if (!GetModuleInformation(GetCurrentProcess(), module_, &module_info, sizeof(module_info)))
 		return fmt::println("failed to retrieve module information: {:08X}", GetLastError());
 
-    constexpr auto signatures = std::to_array<std::pair<const char*, const char*>>({
-        { "\x44\x89\x4C\x24\x20\x4C\x89\x44\x24\x18\x48\x89\x54\x24\x10\x55\x53\x56\x57\x41\x56", "xxxxxxxxxxxxxxxxxxxxx" },
-        { "\x48\x8B\xC4\x44\x89\x48\x20\x48\x89\x50\x10", "xxxxxxxxxxx" },
-        { "\x44\x89\x4C\x24\x00\x4C\x89\x44\x24\x00\x48\x89\x54\x24\x00\x55", "xxxx?xxxx?xxxx?x" }
-        });
+	constexpr auto signatures = std::to_array<std::pair<const char*, const char*>>({
+		{ "\x44\x89\x4C\x24\x20\x4C\x89\x44\x24\x18\x48\x89\x54\x24\x10\x55\x53\x56\x57\x41\x56", "xxxxxxxxxxxxxxxxxxxxx" },
+		{ "\x48\x8B\xC4\x44\x89\x48\x20\x48\x89\x50\x10", "xxxxxxxxxxx" },
+		{ "\x44\x89\x4C\x24\x00\x4C\x89\x44\x24\x00\x48\x89\x54\x24\x00\x55", "xxxx?xxxx?xxxx?x" }
+		});
 
 	std::uintptr_t fn_ptr = NULL;
 
@@ -113,8 +135,9 @@ void main_thread(void*)
 	if (!fn_ptr)
 		return fmt::println("failed to find function");
 
-	if (MH_Initialize() != MH_OK)
-		return fmt::println("failed to initialize minhook");
+	MH_STATUS status = MH_Initialize();
+	if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED)
+		return fmt::println("failed to initialize minhook: {}", (int)status);
 
 	if (MH_CreateHook((void*)fn_ptr, &open_hk, (void**)&o_open) != MH_OK || MH_EnableHook(MH_ALL_HOOKS) != MH_OK)
 		return fmt::println("failed to set hook");
@@ -125,11 +148,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	if (ul_reason_for_call == DLL_PROCESS_ATTACH)
 	{
 		AllocConsole();
-		AttachConsole(ATTACH_PARENT_PROCESS);
-		SetConsoleTitle(L"cs2 swapping");
-
+		
 		FILE* file = nullptr;
 		freopen_s(&file, "CONOUT$", "w", stdout);
+
+		SetConsoleTitle(L"cs2 swapping");
 
 		_beginthread(&main_thread, NULL, nullptr);
 	}
